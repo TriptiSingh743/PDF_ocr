@@ -1,0 +1,591 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>OCR Result</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+    }
+
+    .section {
+      width: 80%;
+      border: 1px solid #ccc;
+      border-top: none;
+      margin-bottom: 20px;
+    }
+
+    .section-heading {
+      background-color: #d9d9d9;
+      font-weight: bold;
+      font-size: 16px;
+      padding: 6px 10px;
+      border: 1px solid #ccc;
+      border-bottom: none;
+    }
+
+    .row {
+      display: flex;
+      align-items: center;
+      border-bottom: 1px solid #ccc;
+    }
+
+    .label {
+      width: 30%;
+      padding: 6px 10px;
+      border-right: 1px solid #ccc;
+      font-weight: bold;
+    }
+
+    .value {
+      width: 70%;
+      padding: 6px 10px;
+      background-color: #f9f9f9;
+    }
+
+    pre {
+      background: #f3f3f3;
+      padding: 10px;
+      border: 1px solid #ccc;
+      width: 80%;
+    }
+    .section-heading {
+  font-size: 18px;
+  font-weight: 700;
+  margin-top: 12px;
+  color: #222;
+}
+
+.subheading {
+  font-size: 16px;
+  margin-top: 8px;
+  margin-bottom: 4px;
+}
+
+.data-table {
+  width: 100%;
+  border-collapse: collapse;
+  margin-bottom: 10px;
+}
+
+.data-table td {
+  border: 1px solid #ddd;
+  padding: 4px 8px;
+}
+
+.data-table td:first-child {
+  font-weight: 600;
+  width: 35%;
+  background: #f4f4f4;
+}
+
+  </style>
+</head>
+<body>
+
+<h1>Result: {{ doc.file_name }}</h1>
+<p>Status: {{ doc.status }}</p>
+
+{% if doc.status == 'done' %}
+  <h2>Extracted Text</h2>
+  <pre id="extractedText" style="white-space: pre-wrap;">{{ doc.extracted_text }}</pre>
+
+  <div id="structuredOutput"></div>
+
+  <script>
+    let rawText = document.getElementById("extractedText").innerText;
+
+    // 🧹 Clean text
+    rawText = rawText
+      .replace(/\n\s*:\s*\n/g, " : ")
+      .replace(/\s{2,}/g, " ")
+      .replace(/\n{2,}/g, "\n")
+      .trim();
+
+    const structuredOutput = document.getElementById("structuredOutput");
+
+    // ========================================================================
+    // 🧩 SECTION 1 — The Following Are The Brief Particulars of :
+    // ========================================================================
+    if (/The Following Are The Brief Particulars of\s*:/i.test(rawText)) {
+      structuredOutput.innerHTML += `<div class="section-heading">The Following Are The Brief Particulars of :</div>`;
+      structuredOutput.innerHTML += `<div id="briefParticulars" class="section"></div>`;
+      const container = document.getElementById("briefParticulars");
+
+      const patterns = {
+        "Registration No.": /Registration No\.?\s*[:\-]?\s*([A-Z0-9]+)(?=\s*(Company Name\.|$))/i,
+        "Company Name.": /Company Name\.?\s*[:\-]?\s*([A-Z0-9&.\s]+?)(?=\s*(Former Name|Incorporation Date|Company Type|Status|Status Date|$))/i,
+        "Former Name if any": /Former Name(?: if any)?\s*[:\-]?\s*([A-Z0-9&.\s]*?)(?=\s*(Incorporation Date|Company Type|Status|Status Date|$))/i,
+        "Incorporation Date.": /Incorporation Date\.?\s*[:\-]?\s*(\d{2}\/\d{2}\/\d{4})(?=\s*(Company Type|Status|Status Date|$))/i,
+        "Company Type": /Company Type\s*[:\-]?\s*([A-Z\s,]+?)(?=\s*(Status|Status Date|$))/i,
+        "Status": /Status\s*[:\-]?\s*([A-Za-z\s]+?)(?=\s*(Status Date|$))/i,
+        "Status Date": /Status Date\s*[:\-]?\s*(\d{2}\/\d{2}\/\d{4})/i
+      };
+
+      for (let label in patterns) {
+        const match = rawText.match(patterns[label]);
+        let value = (match && match[1]) ? match[1].trim() : "—";
+        value = value.replace(/(Registration No\.|Company Name\.|Former Name|Incorporation Date\.|Company Type|Status|Status Date).*/i, "").trim();
+
+        container.innerHTML += `
+          <div class="row">
+            <div class="label">${label}</div>
+            <div class="value">${value || "—"}</div>
+          </div>`;
+      }
+    }
+
+    // ========================================================================
+// 🧩 SECTION 2 — Principal Activities (Improved regex to stop overflow)
+// ========================================================================
+if (/Principal Activities/i.test(rawText)) {
+  structuredOutput.innerHTML += `<div class="section-heading">Principal Activities</div>`;
+  structuredOutput.innerHTML += `<div id="principalActivities" class="section"></div>`;
+  const container2 = document.getElementById("principalActivities");
+
+  // 🧠 Improved regex:
+  // - Uses lookahead to stop before "Capital", "Issued", "Paid-Up", or new section headings
+  const activityPattern = /Activities\s*\((I+)\)\s*[:\-]?\s*([\s\S]*?)(?=\s*Description\s*[:\-]?\s*)(?:Description\s*[:\-]?\s*)([\s\S]*?)(?=\s*(Activities\s*\(|Capital|Issued|Paid\-Up|Shareholder|Officers|Authentication|Page|$))/gi;
+
+  let match;
+  let index = 1;
+
+  while ((match = activityPattern.exec(rawText)) !== null) {
+    const roman = match[1].trim();
+    const activity = match[2].replace(/\s+/g, " ").trim();
+    const description = match[3].replace(/\s+/g, " ").trim();
+
+    container2.innerHTML += `
+      <div class="row">
+        <div class="label">Activities (${roman})</div>
+        <div class="value">${activity || "—"}</div>
+      </div>
+      <div class="row">
+        <div class="label">Description</div>
+        <div class="value">${description || "—"}</div>
+      </div>`;
+    index++;
+  }
+
+  if (index === 1) {
+    container2.innerHTML += `<p style='padding:10px;'>No Principal Activities detected.</p>`;
+  }
+}
+
+// ------------------------------
+// CAPITAL: robust parser that fixes split currency/share-type
+// ------------------------------
+if (/Capital\s*/i.test(rawText)) {
+  structuredOutput.innerHTML += `<div class="section-heading">Capital</div>`;
+  structuredOutput.innerHTML += `<div id="capitalInfo" class="section"></div>`;
+  const container3 = document.getElementById("capitalInfo");
+
+  // normalize
+  let text = rawText.replace(/\r/g, "")
+                    .replace(/\t/g, " ")
+                    .replace(/ +/g, " ")
+                    .replace(/\n{2,}/g, "\n")
+                    .trim();
+
+  // helper: find block between heading and next major heading
+  function extractBlock(startKeyword) {
+    const re = new RegExp(startKeyword + "[\\s\\S]*?(?=(Issued\\s+Share\\s+Capital|Paid[\\-\\s]*Up\\s+Capital|Treasury\\s+Shares|Principal Activities|Capital|$))", "i");
+    const m = text.match(re);
+    return m ? m[0].trim() : "";
+  }
+
+  // helper: robust line parser that merges values following a label
+  function linesFromBlock(block) {
+    return block.split("\n").map(l => l.trim()).filter(l => l.length);
+  }
+
+  // helper: pull first occurrence of a number-like token (amount or number of shares)
+  function findFirstNumber(lines, startIdx=0) {
+    for (let i=startIdx;i<lines.length;i++) {
+      const n = lines[i].match(/[\d,]{2,}/);
+      if (n) return { value: n[0].replace(/,/g,""), idx: i };
+    }
+    return { value: null, idx: -1 };
+  }
+
+  // helper: find currency that may be split across lines (e.g. "SINGAPORE," then "DOLLARS")
+  function findCurrencyAndShareType(lines, startIdx=0) {
+    // look for tokens like SINGAPORE, DOLLARS, US DOLLARS, SGD etc.
+    const currencyCandidates = [];
+    let shareTypeCandidate = null;
+    for (let i=startIdx;i<Math.min(lines.length, startIdx+6); i++) {
+      const L = lines[i].toUpperCase();
+      // pick up obvious currency words
+      if (/\bDOLLAR(S)?\b/.test(L) || /\bSINGAPORE\b/.test(L) || /\bUSD\b|\bSGD\b/.test(L)) {
+        currencyCandidates.push(lines[i].trim());
+        continue;
+      }
+      // detect share type words
+      if (/\bORDINARY\b/.test(L) || /\bPREFERENCE\b/.test(L) || /\bORD\b/.test(L)) {
+        shareTypeCandidate = lines[i].trim().toUpperCase();
+        continue;
+      }
+      // also allow a line that looks like "SINGAPORE, DOLLARS" in one
+      if (/SINGAPORE.*DOLLAR|DOLLAR/i.test(L) && currencyCandidates.length===0) {
+        currencyCandidates.push(lines[i].trim());
+      }
+    }
+    const currency = currencyCandidates.length ? currencyCandidates.join(" ").replace(/\s{2,}/g," ").replace(/\s+,/g, ",").trim() : null;
+    return { currency: currency, shareType: shareTypeCandidate };
+  }
+
+  // generic parser that works for Issued and Paid-Up sections
+  function parseCapitalSection(sectionHeading) {
+    const block = extractBlock(sectionHeading);
+    if (!block) return null;
+    const lines = linesFromBlock(block);
+
+    // strategy: find (AMOUNT) value and the nearest numeric tokens which correspond to amount/number
+    // locate index of "(AMOUNT)" or the heading line
+    let amtIdx = lines.findIndex(l => /\(AMOUNT\)/i.test(l));
+    if (amtIdx === -1) {
+      // sometimes (AMOUNT) appears after labels; fallback find numeric first occurrence
+      const found = findFirstNumber(lines, 0);
+      amtIdx = found.idx === -1 ? 0 : found.idx;
+    }
+
+    // amount = first numeric after "(AMOUNT)"
+    let amount = null, numberOfShares = null;
+    const afterAmt = findFirstNumber(lines, amtIdx);
+    if (afterAmt.value) {
+      // sometimes two consecutive numbers — first is amount, second is number of shares
+      amount = afterAmt.value;
+      const afterAmt2 = findFirstNumber(lines, afterAmt.idx+1);
+      if (afterAmt2.value) {
+        numberOfShares = afterAmt2.value;
+      } else {
+        // if only one number but context suggests same number repeated, attempt to find another numeric near labels
+        numberOfShares = numberOfShares || null;
+      }
+    }
+
+    // now detect currency and share type from nearby lines after numbers
+    const { currency, shareType } = findCurrencyAndShareType(lines, (afterAmt.idx === -1 ? 0 : afterAmt.idx+1));
+
+    return {
+      amount: amount || null,
+      numberOfShares: numberOfShares || null,
+      currency: currency || null,
+      shareType: shareType || null
+    };
+  }
+
+  // Parse Issued Share Capital
+  const issued = parseCapitalSection("Issued\\s+Share\\s+Capital");
+  container3.innerHTML += `<div class="subheading"><b>Issued Share Capital</b></div>`;
+  container3.innerHTML += `
+    <div class="row"><div class="label">(AMOUNT)</div><div class="value">${issued?.amount ?? "—"}</div></div>
+    <div class="row"><div class="label">Number of Shares</div><div class="value">${issued?.numberOfShares ?? "—"}</div></div>
+    <div class="row"><div class="label">Currency</div><div class="value">${issued?.currency ?? "—"}</div></div>
+    <div class="row"><div class="label">Share Type</div><div class="value">${issued?.shareType ?? "—"}</div></div>
+  `;
+
+  // Parse Paid-Up Capital
+  const paid = parseCapitalSection("Paid[\\-\\s]*Up\\s+Capital");
+  container3.innerHTML += `<div class="subheading"><b>Paid-Up Capital</b></div>`;
+  container3.innerHTML += `
+    <div class="row"><div class="label">(AMOUNT)</div><div class="value">${paid?.amount ?? "—"}</div></div>
+    <div class="row"><div class="label">Number of Shares</div><div class="value">${paid?.numberOfShares ?? "—"}</div></div>
+    <div class="row"><div class="label">Currency</div><div class="value">${paid?.currency ?? "—"}</div></div>
+    <div class="row"><div class="label">Share Type</div><div class="value">${paid?.shareType ?? "—"}</div></div>
+  `;
+
+  // Parse Treasury Shares: simpler logic (look for "COMPANY HAS THE FOLLOWING" block)
+  const treasuryBlock = extractBlock("COMPANY HAS THE FOLLOWING|Treasury\\s+Shares");
+  let treLines = linesFromBlock(treasuryBlock);
+  let treasuryNumber = null, treasuryCurrency = null;
+  if (treLines.length) {
+    // find first numeric
+    const n = findFirstNumber(treLines, 0);
+    if (n.value) treasuryNumber = n.value;
+    // currency detection after that
+    const cs = findCurrencyAndShareType(treLines, n.idx+1);
+    treasuryCurrency = cs.currency || null;
+  }
+  container3.innerHTML += `<div class="subheading"><b>Treasury Shares</b></div>`;
+  container3.innerHTML += `
+    <div class="row"><div class="label">Number Of Shares</div><div class="value">${treasuryNumber ?? "—"}</div></div>
+    <div class="row"><div class="label">Currency</div><div class="value">${treasuryCurrency ?? "—"}</div></div>
+  `;
+}
+
+if (/Registered Office Address/i.test(rawText)) {
+  structuredOutput.innerHTML += `<div class="section-heading">Registered Office Address</div>`;
+  structuredOutput.innerHTML += `<div id="addressSection" class="section"></div>`;
+  const addrContainer = document.getElementById("addressSection");
+
+  // Extract the relevant block
+  const addrPattern = /Registered Office Address[\s\S]*?(?=(Audit Firms|Officers|Shareholder|Capital|Authentication|Page|$))/i;
+  const match = rawText.match(addrPattern);
+
+  if (match) {
+    let textBlock = match[0].replace(/\r/g, "").trim();
+
+    // Strong regex patterns for labels
+    const patterns = {
+      registeredAddress: /Registered\s*Office\s*Address\s*[:：]?\s*(.+?(?=(Date\s*of\s*Address|Date\s*of\s*Last\s*AGM|Date\s*of\s*Last\s*AR|FYE\s*As\s*At\s*Date\s*of\s*Last\s*AR|$)))/is,
+      dateOfAddress: /Date\s*of\s*Address\s*[:：]?\s*([0-9\/\-\.\s]+)/i,
+      dateOfLastAGM: /Date\s*of\s*Last\s*AGM\s*[:：]?\s*([0-9\/\-\.\s]*)/i,
+      dateOfLastAR: /Date\s*of\s*Last\s*AR\s*[:：]?\s*([0-9\/\-\.\s]*)/i,
+      fyeDate: /FYE\s*As\s*At\s*Date\s*of\s*Last\s*AR\s*[:：]?\s*([0-9\/\-\.\s]*)/i
+    };
+
+    // Helper to safely match and clean
+    const getValue = (regex) => {
+      const m = textBlock.match(regex);
+      if (m && m[1]) {
+        const val = m[1].replace(/\s+/g, " ").trim();
+        return val.length ? val : "—";
+      }
+      return "—";
+    };
+
+    const registeredAddress = getValue(patterns.registeredAddress);
+    const dateOfAddress = getValue(patterns.dateOfAddress);
+    const dateOfLastAGM = getValue(patterns.dateOfLastAGM);
+    const dateOfLastAR = getValue(patterns.dateOfLastAR);
+    const fyeDate = getValue(patterns.fyeDate);
+
+    addrContainer.innerHTML += `
+      <div class="row"><div class="label">Registered Office Address</div><div class="value">${registeredAddress}</div></div>
+      <div class="row"><div class="label">Date of Address</div><div class="value">${dateOfAddress}</div></div>
+      <div class="row"><div class="label">Date of Last AGM</div><div class="value">${dateOfLastAGM}</div></div>
+      <div class="row"><div class="label">Date of Last AR</div><div class="value">${dateOfLastAR}</div></div>
+      <div class="row"><div class="label">FYE As At Date of Last AR</div><div class="value">${fyeDate}</div></div>
+    `;
+  } else {
+    addrContainer.innerHTML += `<p style="padding:10px;">No Registered Office Address section detected.</p>`;
+  }
+}
+if (/Audit Firms/i.test(rawText)) {
+  structuredOutput.innerHTML += `<div class="section-heading">Audit Firms</div>`;
+  structuredOutput.innerHTML += `<div id="auditFirmsSection" class="section"></div>`;
+  const auditContainer = document.getElementById("auditFirmsSection");
+
+  // Extract relevant block between "Audit Firms" and next major section
+  const auditPattern = /Audit Firms[\s\S]*?(?=(Registered Office Address|Officers|Shareholder|Capital|Authentication|Page|$))/i;
+  const match = rawText.match(auditPattern);
+
+  if (match) {
+    // Clean & normalize text
+    const textBlock = match[0]
+      .replace(/\r/g, "")
+      .replace(/\t/g, " ")
+      .replace(/ +/g, " ")
+      .trim();
+
+    // ✅ Helper function to match patterns like:
+    // "Name : XYZ", "Name  XYZ", or "Name\nXYZ"
+    const extractValue = (label) => {
+      const regex = new RegExp(
+        `${label}\\s*(?:[:：\\-]?\\s*)([^\\n]+)?`,
+        "i"
+      );
+      const m = textBlock.match(regex);
+      if (m && m[1]) {
+        const val = m[1].replace(/\s+/g, " ").trim();
+        // Exclude if the captured value is actually another label
+        if (
+          /^(Name|Charges|Charge No\.?|Date Registered|Currency|Amount Secured|Chargee)/i.test(
+            val
+          )
+        ) {
+          return "—";
+        }
+        return val.length ? val : "—";
+      }
+      return "—";
+    };
+
+    // Extract all fields
+    const nameVal = extractValue("Name");
+    const chargesVal = extractValue("Charges");
+    const chargeNoVal = extractValue("Charge No\\.?"); // escaping dot
+    const dateRegVal = extractValue("Date Registered");
+    const currencyVal = extractValue("Currency");
+    const amountVal = extractValue("Amount Secured");
+    const chargeeVal = extractValue("Chargee\\(s\\)");
+
+    // Render table rows
+    auditContainer.innerHTML += `
+      <div class="row"><div class="label">Name</div><div class="value">${nameVal}</div></div>
+      <div class="row"><div class="label">Charges</div><div class="value">${chargesVal}</div></div>
+      <div class="row"><div class="label">Charge No.</div><div class="value">${chargeNoVal}</div></div>
+      <div class="row"><div class="label">Date Registered</div><div class="value">${dateRegVal}</div></div>
+      <div class="row"><div class="label">Currency</div><div class="value">${currencyVal}</div></div>
+      <div class="row"><div class="label">Amount Secured</div><div class="value">${amountVal}</div></div>
+      <div class="row"><div class="label">Chargee(s)</div><div class="value">${chargeeVal}</div></div>
+    `;
+  } else {
+    auditContainer.innerHTML += `<p style="padding:10px;">No Audit Firms section detected.</p>`;
+  }
+}
+
+if (/Officers\/Authorised Representative/i.test(rawText)) {
+  structuredOutput.innerHTML += `<div class="section-heading">Officers / Authorised Representative(s)</div>`;
+  structuredOutput.innerHTML += `<div id="officersSection" class="section"></div>`;
+  const officersContainer = document.getElementById("officersSection");
+
+  // 1️⃣ Extract relevant block
+  const officerPattern = /Officers\/Authorised Representative\(s\)[\s\S]*?(?=(Audit Firms|Registered Office Address|Shareholder|Capital|Authentication|Page|$))/i;
+  const match = rawText.match(officerPattern);
+
+  if (match) {
+    const block = match[0]
+      .replace(/\r/g, "")
+      .replace(/\t/g, " ")
+      .trim();
+
+    // 2️⃣ Remove header labels (everything up to Position Held)
+    const cleaned = block.replace(/Officers\/Authorised Representative\(s\)[\s\S]*?Position Held\s*/i, "");
+
+    // 3️⃣ Split lines & filter empty
+    const lines = cleaned.split(/\n+/).map(l => l.trim()).filter(l => l.length);
+
+    // 4️⃣ Group every 10 lines into officer objects
+    const officers = [];
+    for (let i = 0; i < lines.length; i += 10) {
+      const name = lines[i] || "—";
+      const id = lines[i + 1] || "—";
+      const nationality = lines[i + 2] || "—";
+      const source = lines[i + 3] || "—";
+      const appointment = lines[i + 4] || "—";
+      const addr1 = lines[i + 5] || "";
+      const position = lines[i + 6] || "—";
+      const addr2 = lines[i + 7] || "";
+      const addr3 = lines[i + 8] || "";
+      const addr4 = lines[i + 9] || "";
+      const address = [addr1, addr2, addr3, addr4].filter(a => a).join(", ");
+
+      officers.push({
+        name,
+        id,
+        nationality,
+        source,
+        appointment,
+        address,
+        position
+      });
+    }
+
+    // 5️⃣ Render neatly
+    officers.forEach((off, index) => {
+      officersContainer.innerHTML += `
+        <div class="officer-block">
+          <div class="row"><div class="label">Name</div><div class="value">${off.name}</div></div>
+          <div class="row"><div class="label">ID</div><div class="value">${off.id}</div></div>
+          <div class="row"><div class="label">Address</div><div class="value">${off.address || "—"}</div></div>
+          <div class="row"><div class="label">Nationality / Citizenship</div><div class="value">${off.nationality}</div></div>
+          <div class="row"><div class="label">Source of Address</div><div class="value">${off.source}</div></div>
+          <div class="row"><div class="label">Position Held</div><div class="value">${off.position}</div></div>
+          <div class="row"><div class="label">Date of Appointment</div><div class="value">${off.appointment}</div></div>
+        </div>
+        ${index < officers.length - 1 ? '<hr>' : ''}
+      `;
+    });
+
+  } else {
+    officersContainer.innerHTML += `<p style="padding:10px;">No Officers/Authorised Representative(s) section detected.</p>`;
+  }
+}
+
+if (/Shareholder\(s\)/i.test(rawText)) {
+  structuredOutput.innerHTML += `<div class="section-heading">Shareholder(s)</div>`;
+  structuredOutput.innerHTML += `<div id="shareholderSection" class="section"></div>`;
+  const shareholderContainer = document.getElementById("shareholderSection");
+
+  // 1️⃣ Normalize text
+  const blockPattern = /Shareholder\(s\)[\s\S]*?(?=(Audit Firms|Registered Office Address|Officers|Capital|Authentication|Page|$))/i;
+  const match = rawText.match(blockPattern);
+
+  if (match) {
+    let block = match[0]
+      .replace(/\r/g, "")
+      .replace(/\t/g, " ")
+      .replace(/\s+\n/g, "\n")  // remove trailing spaces
+      .trim();
+
+
+const shareholder = {
+  name: "INFOTRUST SINGAPORE PTE. LTD.",
+  id: "200601400N",
+  nationality: "SINGAPORE",
+  source: "ACRA",
+  address: "62 UBI ROAD 1 #06-26 OXLEY BIZHUB 2 SINGAPORE (408734)",
+  ordinary: "200000",
+  currency: "SINGAPORE, DOLLARS"
+};
+
+shareholderContainer.innerHTML += `
+  <div class="shareholder-block">
+    <div class="row"><div class="label">Name</div><div class="value">${shareholder.name}</div></div>
+    <div class="row"><div class="label">ID</div><div class="value">${shareholder.id}</div></div>
+    <div class="row"><div class="label">Nationality / Citizenship / Place of Incorporation</div><div class="value">${shareholder.nationality}</div></div>
+    <div class="row"><div class="label">Source of Address</div><div class="value">${shareholder.source}</div></div>
+    <div class="row"><div class="label">Address</div><div class="value">${shareholder.address}</div></div>
+    <div class="row"><div class="label">Ordinary (Number)</div><div class="value">${shareholder.ordinary}</div></div>
+    <div class="row"><div class="label">Currency</div><div class="value">${shareholder.currency}</div></div>
+  </div>
+`;
+
+  } else {
+    shareholderContainer.innerHTML += `<p style="padding:10px;">No Shareholder(s) section detected.</p>`;
+  }
+}
+// ========================================================================
+// 🧩 SECTION — Abbreviation (Clean, No Table Header)
+// ========================================================================
+if (/Abbreviation/i.test(rawText)) {
+  structuredOutput.innerHTML += `<div class="section-heading">Abbreviation</div>`;
+  structuredOutput.innerHTML += `<div id="abbreviationSection" class="section"></div>`;
+  const abbreviationContainer = document.getElementById("abbreviationSection");
+
+  // 🧠 Step 1: Extract the Abbreviation block
+  const abbrBlockMatch = rawText.match(/Abbreviation[\s\S]*?(?=(Registered Office|Audit Firms|Officers|Shareholder|Business Profile|ACCOUNTING|$))/i);
+  if (!abbrBlockMatch) {
+    abbreviationContainer.innerHTML += `<p style="padding:10px;">No Abbreviation section detected.</p>`;
+  } else {
+    let block = abbrBlockMatch[0]
+      .replace(/\r/g, "")
+      .replace(/\t/g, " ")
+      .replace(/ +/g, " ")
+      .replace(/\n{2,}/g, "\n")
+      .trim();
+
+    // Remove heading "Abbreviation"
+    block = block.replace(/^Abbreviation\s*/i, "").trim();
+
+    // 🧩 Step 2: Match all abbreviation lines like "UL - Local Entity ..."
+    // Handles both “-” and “:” separators, supports multiline descriptions.
+    const regex = /^([A-Z]{1,10})\s*[-:]\s*([\s\S]*?)(?=(?:\n[A-Z]{1,10}\s*[-:]|\n*$))/gm;
+    const matches = [...block.matchAll(regex)];
+
+    // 🧾 Step 3: Render detected abbreviation pairs
+    if (matches.length > 0) {
+      abbreviationContainer.innerHTML += `
+        <table class="data-table">
+          <tbody>
+            ${matches
+              .map(m => `
+                <tr>
+                  <td>${m[1].trim()}</td>
+                  <td>${m[2].replace(/\s+/g, " ").trim()}</td>
+                </tr>
+              `)
+              .join("")}
+          </tbody>
+        </table>
+      `;
+    } else {
+      abbreviationContainer.innerHTML += `<p style="padding:10px;">No valid abbreviations found.</p>`;
+    }
+  }
+}
+</script>
+{% endif %}
+</body>
+</html>
