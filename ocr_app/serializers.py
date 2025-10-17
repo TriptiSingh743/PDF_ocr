@@ -4,4 +4,5 @@ from .models import Document
 class DocumentSerializer(serializers.ModelSerializer):
     class Meta:
         model = Document
-        fields = ['id', 'file_name', 's3_key', 'status', 'extracted_text', 'entities']
+        # Add uploaded_at and ensure entities is included
+        fields = ['id', 'file_name', 's3_key', 'status', 'extracted_text', 'entities', 'uploaded_at']
