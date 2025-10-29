@@ -5,9 +5,7 @@ from django.conf import settings
 from django.shortcuts import render, redirect, get_object_or_404
 from .forms import UploadPDFForm
 from .models import Document
-#from .utils import parse_pdf_by_headings  # updated utils function
 from .utils import extract_entities
-
 from .serializers import DocumentSerializer
 
 # DRF imports
@@ -85,9 +83,10 @@ def process_pdf_s3(doc):
         extracted_text = "\n".join(lines)
         doc.extracted_text = extracted_text
 
-        # Step 5: Parse structured entities
+        # Step 5: Parse structured entities (flattened)
         if extracted_text.strip():
             entities = extract_entities(extracted_text)
+            # ✅ FIX — Save clean, single-level entity dict
             doc.entities = entities
 
         doc.status = "done"
@@ -171,9 +170,22 @@ def pdf_extraction_api(request):
     # Process PDF (Textract + utils)
     processed_doc = process_pdf_s3(doc)
 
-    # Return serialized response
-    serializer = DocumentSerializer(processed_doc)
-    return Response(serializer.data, status=status.HTTP_200_OK)
+    # ✅ Flatten entities in response (avoid nested)
+    data = processed_doc.entities
+    if isinstance(data, dict) and "entities" in data:
+        data = data["entities"]
+
+    response_data = {
+        "id": processed_doc.id,
+        "file_name": processed_doc.file_name,
+        "s3_key": processed_doc.s3_key,
+        "status": processed_doc.status,
+        "extracted_text": processed_doc.extracted_text,
+        "entities": data,  # ✅ single-level
+        "uploaded_at": processed_doc.uploaded_at,
+    }
+
+    return Response(response_data, status=status.HTTP_200_OK)
 
 
 # ===============================
